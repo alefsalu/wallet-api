@@ -9,7 +9,7 @@ COPY src ./src
 RUN mvn clean package -DskipTests -B
 
 # Stage 2: Minimal hardened runtime image
-FROM eclipse-temurin:21-jre-alpine AS runner
+FROM eclipse-temurin:25-jre-alpine AS runner
 WORKDIR /app
 
 RUN addgroup -g 10001 appgroup && \
