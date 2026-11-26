@@ -1,0 +1,438 @@
+openapi: 3.0.1
+info:
+  title: Wallet API
+  description: Digital Wallet Service in Java 21 with Hexagonal Architecture, Optimistic Locking, and Outbox Pattern
+  contact:
+    name: Alef Salu
+    email: alef.salu@example.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+    description: Local Development Server
+paths:
+  /api/v1/auth/register:
+    post:
+      tags:
+        - Authentication
+      summary: Register a new user and initialize digital wallet
+      operationId: register
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+        required: true
+      responses:
+        '201':
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          description: Validation error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailResponse'
+        '409':
+          description: Email already registered
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailResponse'
+  /api/v1/auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: Authenticate user and receive RS256 token pair
+      operationId: login
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+        required: true
+      responses:
+        '200':
+          description: Authentication successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPairResponse'
+        '401':
+          description: Invalid email or password
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailResponse'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailResponse'
+  /api/v1/auth/refresh:
+    post:
+      tags:
+        - Authentication
+      summary: Rotate refresh token and issue new RS256 access token
+      operationId: refresh
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+        required: true
+      responses:
+        '200':
+          description: Token rotated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPairResponse'
+        '401':
+          description: Invalid, expired or reused refresh token
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetailResponse'
+  /api/v1/auth/logout:
+    post:
+      tags:
+        - Authentication
+      summary: Revoke refresh token and end session
+      operationId: logout
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+        required: true
+      responses:
+        '204':
+          description: Token revoked successfully
+  /api/v1/wallets/me:
+    get:
+      tags:
+        - Wallet Queries
+      summary: Get current authenticated user's digital wallet details
+      operationId: getMyWallet
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Wallet details retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletResponse'
+        '401':
+          description: Unauthorized
+        '404':
+          description: Wallet not found
+  /api/v1/wallets/me/transactions:
+    get:
+      tags:
+        - Wallet Queries
+      summary: Get paginated transaction history for authenticated user's wallet
+      operationId: getMyTransactions
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Paginated transaction list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageResponseTransactionResponse'
+        '400':
+          description: Invalid pagination parameters
+  /api/v1/wallets/me/deposits:
+    post:
+      tags:
+        - Wallet Mutations
+      summary: Deposit funds into wallet
+      operationId: deposit
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AmountRequest'
+        required: true
+      responses:
+        '201':
+          description: Deposit completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionResponse'
+        '400':
+          description: Validation error
+        '422':
+          description: Idempotency key reused with different payload
+  /api/v1/wallets/me/withdrawals:
+    post:
+      tags:
+        - Wallet Mutations
+      summary: Withdraw funds from wallet
+      operationId: withdraw
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AmountRequest'
+        required: true
+      responses:
+        '201':
+          description: Withdrawal completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionResponse'
+        '400':
+          description: Validation error
+        '422':
+          description: Insufficient funds or idempotency conflict
+  /api/v1/transfers:
+    post:
+      tags:
+        - Transfers
+      summary: Transfer money to another digital wallet
+      operationId: transfer
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransferRequest'
+        required: true
+      responses:
+        '201':
+          description: Transfer executed atomically
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionResponse'
+        '400':
+          description: Validation error
+        '404':
+          description: Destination wallet not found
+        '409':
+          description: Concurrent modification conflict
+        '422':
+          description: Insufficient funds or transfer to self
+components:
+  schemas:
+    RegisterRequest:
+      type: object
+      required:
+        - name
+        - email
+        - password
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 12
+    UserResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        email:
+          type: string
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+    TokenPairResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        tokenType:
+          type: string
+          example: Bearer
+        expiresIn:
+          type: integer
+          example: 900
+    RefreshTokenRequest:
+      type: object
+      required:
+        - refreshToken
+      properties:
+        refreshToken:
+          type: string
+    AmountRequest:
+      type: object
+      required:
+        - amount
+      properties:
+        amount:
+          type: string
+          pattern: '^(0|[1-9]\d*)\.\d{2}$'
+          example: '100.00'
+    TransferRequest:
+      type: object
+      required:
+        - destinationWalletId
+        - amount
+      properties:
+        destinationWalletId:
+          type: string
+          format: uuid
+        amount:
+          type: string
+          pattern: '^(0|[1-9]\d*)\.\d{2}$'
+          example: '50.00'
+        description:
+          type: string
+          example: Dinner payment
+    MoneyDto:
+      type: object
+      properties:
+        amount:
+          type: string
+          example: '100.00'
+        currency:
+          type: string
+          example: BRL
+    WalletResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        ownerId:
+          type: string
+          format: uuid
+        balance:
+          $ref: '#/components/schemas/MoneyDto'
+        createdAt:
+          type: string
+          format: date-time
+    TransactionResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [DEPOSIT, WITHDRAWAL, TRANSFER_IN, TRANSFER_OUT]
+        amount:
+          $ref: '#/components/schemas/MoneyDto'
+        balanceAfter:
+          $ref: '#/components/schemas/MoneyDto'
+        counterpartyWalletId:
+          type: string
+          format: uuid
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+    PageResponseTransactionResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/TransactionResponse'
+        page:
+          type: integer
+        size:
+          type: integer
+        totalElements:
+          type: integer
+        totalPages:
+          type: integer
+    ProblemDetailResponse:
+      type: object
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+        code:
+          type: string
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              message:
+                type: string
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: RS256 asymmetric JWT token with portfolio audience
